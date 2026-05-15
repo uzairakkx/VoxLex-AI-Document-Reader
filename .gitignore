@@ -1,1 +1,11 @@
-
+__pycache__/
+*.py[cod]
+*.bin
+*.safetensors
+*.gguf
+hf_cache/
+.ollama/
+pypackages/
+*.log
+.DS_Store
+.ipynb_checkpoints/
