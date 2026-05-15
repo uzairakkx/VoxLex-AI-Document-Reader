@@ -1,1 +1,883 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>VoxLex — Document Reader</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:        #0a0f1e;
+    --surface:   #111827;
+    --card:      #161f35;
+    --border:    #1e2d4a;
+    --accent:    #3b82f6;
+    --accent2:   #06b6d4;
+    --success:   #10b981;
+    --danger:    #ef4444;
+    --text:      #f0f4ff;
+    --muted:     #64748b;
+    --glow:      rgba(59,130,246,0.3);
+  }
 
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 20% 10%, rgba(59,130,246,0.08) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 80%, rgba(6,182,212,0.06) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .app { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100dvh; }
+
+  header {
+    padding: 20px 20px 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; flex-shrink: 0;
+    box-shadow: 0 0 20px var(--glow);
+  }
+  .header-text h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 22px; font-weight: 800;
+    background: linear-gradient(90deg, #f0f4ff 10%, var(--accent) 50%, var(--accent2) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  .header-text h1 .vox {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header-text h1 .lex {
+    background: linear-gradient(90deg, var(--accent2), #f0f4ff);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header-text p { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .status-bar {
+    margin: 16px 20px 0;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+    transition: all 0.3s;
+  }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .status-bar.ready   .status-dot { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .status-bar.working .status-dot { background: var(--accent);  box-shadow: 0 0 8px var(--accent); animation: pulse 1s infinite; }
+  .status-bar.error   .status-dot { background: var(--danger);  box-shadow: 0 0 8px var(--danger); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  main { flex: 1; padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  .section-label {
+    font-size: 10px; font-weight: 500; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 8px;
+  }
+
+  .lang-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  }
+  .lang-btn {
+    padding: 10px 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer; text-align: center;
+    transition: all 0.2s;
+    position: relative; overflow: hidden;
+  }
+  .lang-btn .lang-flag-wrap {
+    width: 44px; height: 30px;
+    margin: 0 auto 5px;
+    border-radius: 5px;
+    /* FIX: overflow visible so flag image is never clipped */
+    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+  }
+  /* FIX: flag rendered as <img> — fills the wrap perfectly on all OS/browsers */
+  .lang-btn .lang-flag-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: 4px;
+  }
+  /* FIX: fallback text shown when image fails to load (network offline) */
+  .lang-btn .lang-flag-wrap img::after {
+    content: attr(data-fallback);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%; height: 100%;
+    font-size: 18px;
+    background: var(--surface);
+  }
+  .lang-btn .lang-name { font-size: 11px; display: block; }
+  .lang-btn:active { transform: scale(0.96); }
+  .lang-btn.selected {
+    background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(6,182,212,0.1));
+    border-color: var(--accent);
+    color: var(--text);
+    box-shadow: 0 0 16px rgba(59,130,246,0.15);
+  }
+  .lang-btn.selected::after {
+    content: '✓';
+    position: absolute; top: 4px; right: 6px;
+    font-size: 9px; color: var(--accent2);
+  }
+
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--surface);
+    position: relative; overflow: hidden;
+  }
+  .upload-zone:active { transform: scale(0.98); }
+  .upload-zone.has-image {
+    border-style: solid;
+    border-color: var(--accent);
+    padding: 0;
+  }
+  .upload-zone.drag-over {
+    border-color: var(--accent2);
+    background: rgba(6,182,212,0.05);
+  }
+  .upload-icon { font-size: 36px; margin-bottom: 10px; }
+  .upload-text { font-size: 14px; color: var(--muted); }
+  .upload-sub  { font-size: 11px; color: var(--muted); opacity: 0.6; margin-top: 4px; }
+  #fileInput        { display: none; }
+  #fileInputGallery { display: none; }
+
+  #preview {
+    width: 100%; border-radius: 14px;
+    max-height: 260px; object-fit: cover;
+    display: block;
+  }
+  .preview-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%);
+    border-radius: 14px;
+    display: flex; align-items: flex-end; padding: 12px;
+    opacity: 1; transition: opacity 0.3s;
+  }
+  .preview-change {
+    font-size: 12px; color: #fff;
+    background: rgba(255,255,255,0.15);
+    padding: 4px 10px; border-radius: 20px;
+    backdrop-filter: blur(8px);
+  }
+
+  /* ── IMAGE SOURCE PICKER ─────────────────────────────────────────────────── */
+  .picker-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    display: none; align-items: flex-end; justify-content: center;
+  }
+  .picker-overlay.show { display: flex; }
+  .picker-sheet {
+    width: 100%; max-width: 480px;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    border-radius: 20px 20px 0 0;
+    padding: 16px 20px 32px;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .picker-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px; font-weight: 700;
+    color: var(--muted); text-align: center;
+    margin-bottom: 16px; letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .picker-options { display: flex; gap: 12px; }
+  .picker-btn {
+    flex: 1; padding: 16px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; text-align: center;
+    transition: all 0.2s;
+  }
+  .picker-btn:active { transform: scale(0.96); background: var(--border); }
+  .picker-btn .picker-icon { font-size: 28px; display: block; margin-bottom: 6px; }
+  .picker-cancel {
+    width: 100%; margin-top: 10px; padding: 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .picker-cancel:active { background: var(--border); }
+
+  .analyze-btn {
+    width: 100%; padding: 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 14px;
+    color: #fff;
+    font-family: 'Syne', sans-serif;
+    font-size: 16px; font-weight: 700;
+    cursor: pointer; letter-spacing: 0.02em;
+    transition: all 0.3s;
+    box-shadow: 0 4px 24px var(--glow);
+    position: relative; overflow: hidden;
+  }
+  .analyze-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .analyze-btn:active::before { opacity: 1; }
+  .analyze-btn:active { transform: scale(0.98); }
+  .analyze-btn:disabled {
+    opacity: 0.4; cursor: not-allowed; transform: none;
+    box-shadow: none;
+  }
+  .btn-inner { position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .result-panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    display: none;
+  }
+  .result-panel.visible { display: block; }
+
+  .result-header {
+    padding: 12px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .result-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 13px; font-weight: 700; color: var(--accent2);
+  }
+  .audio-controls { display: flex; gap: 8px; align-items: center; }
+  .ctrl-btn {
+    width: 32px; height: 32px;
+    background: var(--border);
+    border: none; border-radius: 8px;
+    color: var(--text); font-size: 14px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .ctrl-btn:active { transform: scale(0.9); }
+  .ctrl-btn.playing { background: var(--accent); box-shadow: 0 0 12px var(--glow); }
+
+  .audio-progress {
+    height: 3px;
+    background: var(--border);
+    position: relative; overflow: hidden;
+  }
+  .audio-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    width: 0%; transition: width 0.1s linear;
+  }
+
+  .result-body { padding: 14px 16px; max-height: 260px; overflow-y: auto; }
+  .result-body::-webkit-scrollbar { width: 4px; }
+  .result-body::-webkit-scrollbar-track { background: transparent; }
+  .result-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  #outputText {
+    font-size: 14px; line-height: 1.8;
+    color: var(--text); white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* RTL text direction for Urdu, Arabic, Persian */
+  #outputText.rtl {
+    direction: rtl;
+    text-align: right;
+    font-size: 15px;
+    line-height: 2;
+  }
+
+  .cursor {
+    display: inline-block;
+    width: 2px; height: 16px;
+    background: var(--accent2);
+    border-radius: 1px;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom; margin-left: 2px;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  .queue-indicator {
+    padding: 8px 16px 12px;
+    display: flex; gap: 4px; align-items: center;
+    flex-wrap: wrap;
+  }
+  .queue-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--border); transition: all 0.3s;
+  }
+  .queue-dot.active { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .queue-dot.done   { background: var(--success); }
+
+  footer {
+    padding: 12px 20px 20px;
+    text-align: center;
+    font-size: 10px; color: var(--muted);
+    opacity: 0.5;
+  }
+
+  .toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 10px 18px; border-radius: 20px;
+    font-size: 13px; color: var(--text);
+    opacity: 0; transition: all 0.3s;
+    pointer-events: none; white-space: nowrap;
+    z-index: 999;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">📄</div>
+    <div class="header-text">
+      <h1><span class="vox">Vox</span><span class="lex">Lex</span></h1>
+      <p>Any Document · Any Language · Your Voice</p>
+    </div>
+  </header>
+
+  <div class="status-bar" id="statusBar">
+    <div class="status-dot"></div>
+    <span id="statusText">Connecting to server...</span>
+  </div>
+
+  <main>
+
+    <div>
+      <div class="section-label">Select Your Language</div>
+      <div class="lang-grid" id="langGrid"></div>
+    </div>
+
+    <div>
+      <div class="section-label">Upload Document</div>
+      <div class="upload-zone" id="uploadZone">
+        <div id="uploadPlaceholder">
+          <div class="upload-icon">📑</div>
+          <div class="upload-text">Tap to capture or upload a document</div>
+          <div class="upload-sub">Bill · Letter · Email · Form · Contract · Any Paper</div>
+        </div>
+        <img id="preview" style="display:none" alt="Document preview"/>
+        <div class="preview-overlay" id="previewOverlay" style="display:none">
+          <span class="preview-change">📷 Change document</span>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" capture="environment"/>
+      <input type="file" id="fileInputGallery" accept="image/*"/>
+    </div>
+
+    <button class="analyze-btn" id="analyzeBtn" onclick="startAnalysis()">
+      <div class="btn-inner">
+        <div class="spinner" id="spinner"></div>
+        <span id="btnText">🔍 Read &amp; Explain</span>
+      </div>
+    </button>
+
+    <div class="result-panel" id="resultPanel">
+      <div class="result-header">
+        <span class="result-title">🔊 Explanation</span>
+        <div class="audio-controls">
+          <button class="ctrl-btn" id="playPauseBtn" onclick="togglePlayPause()" title="Play/Pause">▶</button>
+          <button class="ctrl-btn" onclick="stopAudio()" title="Stop">⏹</button>
+        </div>
+      </div>
+      <div class="audio-progress"><div class="audio-progress-fill" id="audioProgress"></div></div>
+      <div class="result-body">
+        <div id="outputText"></div>
+      </div>
+      <div class="queue-indicator" id="queueIndicator"></div>
+    </div>
+
+  </main>
+
+  <footer>VoxLex · Every document explained · Every language · Offline &amp; Private</footer>
+</div>
+
+<!-- ── IMAGE SOURCE PICKER SHEET ──────────────────────────────────────────── -->
+<div class="picker-overlay" id="pickerOverlay">
+  <!-- stopPropagation on sheet so clicking inside doesn't close overlay -->
+  <div class="picker-sheet" id="pickerSheet" onclick="event.stopPropagation()">
+    <div class="picker-title">Choose Document Source</div>
+    <div class="picker-options">
+      <button class="picker-btn" onclick="openCamera()">
+        <span class="picker-icon">📷</span>
+        Camera
+      </button>
+      <button class="picker-btn" onclick="openGallery()">
+        <span class="picker-icon">🖼️</span>
+        Gallery
+      </button>
+    </div>
+    <button class="picker-cancel" onclick="hideImagePicker()">Cancel</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── RTL LANGUAGES ──────────────────────────────────────────────────────────────
+const RTL_LANGS = new Set(['Urdu', 'Arabic', 'Persian']);
+
+// ── STATE ──────────────────────────────────────────────────────────────────────
+let selectedLang   = null;
+let selectedFile   = null;
+let audioQueue     = [];
+let isPlaying      = false;
+let isPaused       = false;
+let isStopped      = false;
+let totalSegments  = 0;
+let playedSegments = 0;
+
+// Single AudioContext — never create a second one while one is alive
+let audioCtx      = null;
+let currentSource = null;
+
+function getAudioCtx() {
+  if (!audioCtx || audioCtx.state === 'closed') {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return audioCtx;
+}
+
+// ── IMAGE PICKER ───────────────────────────────────────────────────────────────
+function showImagePicker() {
+  document.getElementById('pickerOverlay').classList.add('show');
+}
+function hideImagePicker() {
+  document.getElementById('pickerOverlay').classList.remove('show');
+}
+function openCamera() {
+  hideImagePicker();
+  setTimeout(() => document.getElementById('fileInput').click(), 100);
+}
+function openGallery() {
+  hideImagePicker();
+  setTimeout(() => document.getElementById('fileInputGallery').click(), 100);
+}
+
+// Only close overlay when clicking the dark backdrop, not the sheet itself
+document.getElementById('pickerOverlay').addEventListener('click', function(e) {
+  if (e.target === this) hideImagePicker();
+});
+document.getElementById('uploadZone').addEventListener('click', function() {
+  showImagePicker();
+});
+
+// ── LANGUAGE LOADER ────────────────────────────────────────────────────────────
+// FIX: Use flagcdn.com image URLs instead of emoji flags.
+// Emoji country flags are not rendered on Windows (Chrome/Edge) or Linux —
+// they show as empty boxes. flagcdn.com serves real PNG flag images that
+// display correctly on every OS and browser with no extra dependencies.
+// Format: https://flagcdn.com/w40/{iso2_lowercase}.png  (40px wide, ~1KB each)
+const LANG_FLAGS = {
+  'Urdu':       { code: 'pk', label: 'Pakistan'   },
+  'Hindi':      { code: 'in', label: 'India'       },
+  'Arabic':     { code: 'sa', label: 'Saudi Arabia'},
+  'Bengali':    { code: 'bd', label: 'Bangladesh'  },
+  'Persian':    { code: 'ir', label: 'Iran'        },
+  'Indonesian': { code: 'id', label: 'Indonesia'   },
+  'Swahili':    { code: 'ke', label: 'Kenya'       },
+  'Tamil':      { code: 'lk', label: 'Sri Lanka'   },
+  'Tagalog':    { code: 'ph', label: 'Philippines' },
+  'Turkish':    { code: 'tr', label: 'Turkey'      },
+};
+
+async function loadLanguages() {
+  try {
+    const res   = await fetch('/languages');
+    const langs = await res.json();
+    const grid  = document.getElementById('langGrid');
+    grid.innerHTML = '';
+    langs.forEach(lang => {
+      const info = LANG_FLAGS[lang] || { code: 'un', label: lang };
+      const flagUrl = `https://flagcdn.com/w40/${info.code}.png`;
+
+      const btn = document.createElement('button');
+      btn.className    = 'lang-btn';
+      btn.dataset.lang = lang;
+      btn.innerHTML = `
+        <span class="lang-flag-wrap">
+          <img src="${flagUrl}"
+               alt="${info.label} flag"
+               data-fallback="🌐"
+               loading="lazy"/>
+        </span>
+        <span class="lang-name">${lang}</span>
+      `;
+      btn.onclick = () => selectLang(lang, btn);
+      grid.appendChild(btn);
+    });
+    setStatus('ready', 'Ready to read your document');
+  } catch(e) {
+    setStatus('error', 'Cannot reach server');
+  }
+}
+
+function selectLang(lang, btn) {
+  selectedLang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+
+  // Set output text direction based on language
+  const out = document.getElementById('outputText');
+  RTL_LANGS.has(lang) ? out.classList.add('rtl') : out.classList.remove('rtl');
+}
+
+// ── IMAGE HANDLING ─────────────────────────────────────────────────────────────
+function handleFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  selectedFile = file;
+  const url         = URL.createObjectURL(file);
+  const preview     = document.getElementById('preview');
+  const placeholder = document.getElementById('uploadPlaceholder');
+  const zone        = document.getElementById('uploadZone');
+  const overlay     = document.getElementById('previewOverlay');
+  preview.src               = url;
+  preview.style.display     = 'block';
+  placeholder.style.display = 'none';
+  overlay.style.display     = 'flex';
+  zone.classList.add('has-image');
+  e.target.value = '';
+}
+
+document.getElementById('fileInput').addEventListener('change', handleFileSelected);
+document.getElementById('fileInputGallery').addEventListener('change', handleFileSelected);
+
+// Drag and drop
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', ()  => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault(); zone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById('fileInputGallery').files = dt.files;
+    document.getElementById('fileInputGallery').dispatchEvent(new Event('change'));
+  }
+});
+
+// Keyboard support — Enter triggers analysis for desktop judges
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('analyzeBtn').disabled) {
+    startAnalysis();
+  }
+});
+
+// ── STATUS / TOAST ─────────────────────────────────────────────────────────────
+function setStatus(type, msg) {
+  const bar  = document.getElementById('statusBar');
+  const text = document.getElementById('statusText');
+  bar.className    = 'status-bar ' + type;
+  text.textContent = msg;
+}
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── MAIN ANALYSIS ──────────────────────────────────────────────────────────────
+async function startAnalysis() {
+  if (!selectedLang) { showToast('⚠️ Please select your language'); return; }
+  if (!selectedFile)  { showToast('⚠️ Please upload a document');   return; }
+
+  // Single AudioContext — reuse if alive, create if closed
+  const ctx = getAudioCtx();
+  if (ctx.state === 'suspended') ctx.resume();
+
+  audioQueue     = [];
+  isPlaying      = false;
+  isPaused       = false;
+  isStopped      = false;   // reset so audio plays on every new analysis
+  totalSegments  = 0;
+  playedSegments = 0;
+
+  if (currentSource) {
+    try { currentSource.stop(); } catch(e){}
+    currentSource = null;
+  }
+
+  document.getElementById('outputText').innerHTML = '<span class="cursor"></span>';
+  document.getElementById('resultPanel').className = 'result-panel visible';
+  document.getElementById('queueIndicator').innerHTML = '';
+  document.getElementById('audioProgress').style.width = '0%';
+  updatePlayBtn(false);
+
+  setStatus('working', 'Reading your document...');
+  setBtnLoading(true);
+
+  const fd = new FormData();
+  fd.append('language', selectedLang);
+  fd.append('image', selectedFile);
+
+  try {
+    const res = await fetch('/analyze', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: 'Server error ' + res.status }));
+      throw new Error(errData.error || 'Server error ' + res.status);
+    }
+
+    const reader   = res.body.getReader();
+    const decoder  = new TextDecoder();
+    let   leftover = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = (leftover + chunk).split('\n');
+      leftover    = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try { handleMessage(JSON.parse(line)); } catch(e) {}
+      }
+    }
+    if (leftover.trim()) {
+      try { handleMessage(JSON.parse(leftover)); } catch(e) {}
+    }
+  } catch(e) {
+    setStatus('error', 'Error: ' + e.message);
+    showToast('❌ ' + e.message);
+  } finally {
+    setBtnLoading(false);
+  }
+}
+
+function handleMessage(msg) {
+  if (msg.type === 'token') {
+    appendToken(msg.content);
+  }
+  else if (msg.type === 'audio') {
+    const wavBuffer = base64ToArrayBuffer(msg.content);
+    audioQueue.push(wavBuffer);
+    totalSegments++;
+    addQueueDot();
+    if (!isPlaying && !isPaused && !isStopped) playNext();
+  }
+  else if (msg.type === 'done') {
+    removeCursor();
+    setStatus('ready', 'Explanation complete ✓');
+  }
+  else if (msg.type === 'error' || msg.type === 'tts_error') {
+    setStatus('error', msg.content);
+    showToast('❌ ' + msg.content);
+  }
+}
+
+// ── TOKEN DISPLAY ──────────────────────────────────────────────────────────────
+function appendToken(text) {
+  const el     = document.getElementById('outputText');
+  const cursor = el.querySelector('.cursor');
+  if (cursor) cursor.remove();
+  el.appendChild(document.createTextNode(text));
+  el.appendChild(Object.assign(document.createElement('span'), { className: 'cursor' }));
+  el.closest('.result-body').scrollTop = el.closest('.result-body').scrollHeight;
+}
+function removeCursor() {
+  const c = document.getElementById('outputText').querySelector('.cursor');
+  if (c) c.remove();
+}
+
+// ── AUDIO PLAYER ──────────────────────────────────────────────────────────────
+function playNext() {
+  if (isStopped || audioQueue.length === 0) {
+    isPlaying = false;
+    updatePlayBtn(false);
+    return;
+  }
+
+  isPlaying = true;
+  isPaused  = false;
+  updatePlayBtn(true);
+
+  const wavBuffer = audioQueue.shift();
+  const segIndex  = playedSegments;
+  playedSegments++;
+  updateProgress();
+
+  const ctx = getAudioCtx();
+
+  // If context is suspended, re-queue and wait for user gesture
+  if (ctx.state === 'suspended') {
+    audioQueue.unshift(wavBuffer);
+    playedSegments--;
+    isPlaying = false;
+    updatePlayBtn(false);
+    updateProgress();
+    return;
+  }
+
+  ctx.decodeAudioData(wavBuffer.slice(0))
+    .then(audioBuffer => {
+      if (isStopped) { isPlaying = false; updatePlayBtn(false); return; }
+      currentSource = ctx.createBufferSource();
+      currentSource.buffer  = audioBuffer;
+      currentSource.connect(ctx.destination);
+      currentSource.onended = () => {
+        currentSource = null;
+        markQueueDotDone(segIndex);
+        if (!isStopped && !isPaused) playNext();
+        else isPlaying = false;
+      };
+      currentSource.start(0);
+    })
+    .catch(err => {
+      console.error('[Audio decode error]', err);
+      isPlaying = false;
+      if (!isStopped) playNext();
+    });
+}
+
+// ── PLAY / PAUSE ──────────────────────────────────────────────────────────────
+function togglePlayPause() {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === 'running') {
+    ctx.suspend().then(() => {
+      isPaused = true; isPlaying = false; updatePlayBtn(false);
+    });
+  } else if (ctx.state === 'suspended') {
+    ctx.resume().then(() => {
+      isPaused = false;
+      if (currentSource) { isPlaying = true; updatePlayBtn(true); }
+      else if (audioQueue.length > 0) playNext();
+    });
+  }
+}
+
+// ── STOP ──────────────────────────────────────────────────────────────────────
+function stopAudio() {
+  isStopped = true; isPaused = false; isPlaying = false;
+  audioQueue = [];
+  if (currentSource) {
+    try { currentSource.stop(); } catch(e){}
+    currentSource = null;
+  }
+  const ctx = getAudioCtx();
+  if (ctx && ctx.state !== 'closed') ctx.suspend().catch(() => {});
+  updatePlayBtn(false);
+  document.getElementById('audioProgress').style.width = '100%';
+}
+
+function updatePlayBtn(playing) {
+  const btn = document.getElementById('playPauseBtn');
+  btn.textContent = playing ? '⏸' : '▶';
+  btn.classList.toggle('playing', playing);
+}
+
+// Progress tracks completed dots vs total dots
+function updateProgress() {
+  const doneCount = document.querySelectorAll('.queue-dot.done').length;
+  const total     = totalSegments;
+  if (total === 0) return;
+  document.getElementById('audioProgress').style.width =
+    ((doneCount / total) * 100) + '%';
+}
+
+// ── QUEUE DOTS ────────────────────────────────────────────────────────────────
+function addQueueDot() {
+  const qi  = document.getElementById('queueIndicator');
+  const dot = document.createElement('div');
+  dot.className = 'queue-dot active';
+  dot.id        = 'qdot-' + (totalSegments - 1);
+  qi.appendChild(dot);
+}
+function markQueueDotDone(idx) {
+  const dot = document.getElementById('qdot-' + idx);
+  if (dot) { dot.classList.remove('active'); dot.classList.add('done'); }
+  updateProgress();
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function setBtnLoading(loading) {
+  const btn = document.getElementById('analyzeBtn');
+  const sp  = document.getElementById('spinner');
+  const txt = document.getElementById('btnText');
+  btn.disabled     = loading;
+  sp.style.display = loading ? 'block' : 'none';
+  txt.textContent  = loading ? 'Reading...' : '🔍 Read & Explain';
+}
+
+function base64ToArrayBuffer(b64) {
+  const binStr = atob(b64);
+  const bytes  = new Uint8Array(binStr.length);
+  for (let i = 0; i < binStr.length; i++) {
+    bytes[i] = binStr.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+loadLanguages();
+</script>
+</body>
+</html>
