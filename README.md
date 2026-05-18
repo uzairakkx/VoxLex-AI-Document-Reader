@@ -32,3 +32,8 @@ ollama pull gemma4:e4b-instruct-q4_K_M
 
 Run the app:
 python app.py
+
+## Competition
+Built for the Gemma 4 Good Hackathon
+Kaggle x Google, 2026
+https://kaggle.com/competitions/gemma-4-good-hackathon
